@@ -1,0 +1,40 @@
+# ============================================================
+# VISIT WITH US - GIT EXCLUSION RULES
+# ============================================================
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local environment and secrets
+.env
+.env.*
+
+# Prepared datasets are exchanged through workflow artifacts
+tourism_project/outputs/
+
+# MLflow SQLite tracking database
+mlflow.db*
+
+# MLflow local artifact storage
+mlruns/
+mlartifacts/
+
+# Temporary publishing files
+publish_bundle/
+
+# Test caches
+.pytest_cache/
+.coverage
+
+# Operating system files
+.DS_Store
+Thumbs.db
