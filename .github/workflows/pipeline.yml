@@ -1,0 +1,244 @@
+name: Visit With Us - End-to-End MLOps
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Default to read-only permissions.
+permissions:
+  contents: read
+
+jobs:
+
+  # ========================================================
+  # JOB 1: DATA REGISTRATION
+  # ========================================================
+
+  register_data:
+    name: Register and Validate Data
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Register dataset
+        run: |
+          python tourism_project/model_building/data_register.py
+
+  # ========================================================
+  # JOB 2: DATA PREPARATION
+  # ========================================================
+
+  prepare_data:
+    name: Clean and Split Dataset
+    runs-on: ubuntu-latest
+    needs: register_data
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Execute data preparation
+        run: |
+          python tourism_project/model_building/data_preparation.py
+
+      - name: Upload prepared dataset artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepared-data
+          path: tourism_project/outputs/
+          if-no-files-found: error
+          retention-days: 30
+
+  # ========================================================
+  # JOB 3: VERIFY DATA ARTIFACT
+  # ========================================================
+
+  verify_artifact:
+    name: Verify Prepared Data
+    runs-on: ubuntu-latest
+    needs: prepare_data
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download prepared datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-data
+          path: tourism_project/outputs
+
+      - name: Validate artifact files
+        run: |
+          test -s tourism_project/outputs/train.csv
+          test -s tourism_project/outputs/test.csv
+          test -s tourism_project/outputs/split_manifest.json
+          echo "DATA ARTIFACT VERIFICATION: PASSED"
+
+  # ========================================================
+  # JOB 4: MODEL TRAINING AND MLFLOW EXPERIMENTS
+  # ========================================================
+
+  train_model:
+    name: Train and Evaluate Random Forest
+    runs-on: ubuntu-latest
+
+    needs:
+      - prepare_data
+      - verify_artifact
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Data comes from a preceding job's workflow artifact.
+      - name: Download train and test datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-data
+          path: tourism_project/outputs
+
+      - name: Verify training inputs
+        run: |
+          test -s tourism_project/outputs/train.csv
+          test -s tourism_project/outputs/test.csv
+
+      # train_model.py must use the SQLite MLflow backend.
+      - name: Train model and log MLflow experiments
+        run: |
+          python tourism_project/model_building/train_model.py
+
+      - name: Execute model smoke test
+        run: |
+          python tests/test_model_smoke.py
+
+      - name: Verify saved model and SQLite metadata
+        run: |
+          test -s tourism_project/deployment/model.joblib
+          test -s tourism_project/reports/model_metrics.json
+          test -s tourism_project/reports/cv_results.csv
+          test -s mlflow.db
+          echo "MODEL AND MLFLOW VERIFICATION: PASSED"
+
+      # Prepare the folder structure for the publishing job.
+      - name: Stage deployable model and reports
+        run: |
+          mkdir -p publish_bundle/tourism_project/deployment
+          mkdir -p publish_bundle/tourism_project/reports
+
+          cp tourism_project/deployment/model.joblib \
+            publish_bundle/tourism_project/deployment/
+
+          cp tourism_project/reports/* \
+            publish_bundle/tourism_project/reports/
+
+      - name: Upload trained model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model
+          path: publish_bundle/
+          if-no-files-found: error
+          retention-days: 30
+
+      # SQLite contains experiment metadata.
+      # MLflow artifact directories contain model/run files.
+      - name: Upload MLflow experiment evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-tracking
+          path: |
+            mlflow.db
+            mlruns/
+            mlartifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+  # ========================================================
+  # JOB 5: COMMIT MODEL TO MAIN BRANCH
+  # ========================================================
+
+  publish_model:
+    name: Commit Trained Model to Main
+    runs-on: ubuntu-latest
+    needs: train_model
+
+    if: github.ref == 'refs/heads/main'
+
+    # Write access is required only for this job.
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download trained-model artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model
+          path: .
+
+      - name: Verify publication files
+        run: |
+          test -s tourism_project/deployment/model.joblib
+          test -s tourism_project/reports/model_metrics.json
+          test -s tourism_project/reports/cv_results.csv
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit trained model and reports
+        run: |
+          git add tourism_project/deployment/model.joblib
+          git add tourism_project/reports/
+
+          if git diff --cached --quiet; then
+            echo "No new model or report changes."
+            exit 0
+          fi
+
+          git commit -m "ci: update trained model [skip ci]"
+          git push origin HEAD:main
