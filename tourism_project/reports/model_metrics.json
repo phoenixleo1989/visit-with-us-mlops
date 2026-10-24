@@ -2,7 +2,7 @@
   "algorithm": "RandomForestClassifier",
   "selection_metric": "average_precision",
   "cross_validation_folds": 3,
-  "best_cv_average_precision": 0.7145771560589336,
+  "best_cv_average_precision": 0.7324819171054319,
   "best_parameters": {
     "model__max_depth": 12,
     "model__min_samples_leaf": 1,
@@ -10,13 +10,13 @@
   },
   "test_metrics": {
     "accuracy": 0.8680387409200968,
-    "balanced_accuracy": 0.7099233402166841,
-    "precision": 0.7659574468085106,
-    "recall": 0.4528301886792453,
-    "f1_score": 0.5691699604743083,
-    "roc_auc": 0.9039159665450294,
-    "average_precision": 0.7125328593871812,
-    "top_20_capture_rate": 0.660377358490566,
-    "top_20_lift": 3.285974085019322
+    "balanced_accuracy": 0.7865642650372926,
+    "precision": 0.6582278481012658,
+    "recall": 0.6540880503144654,
+    "f1_score": 0.6561514195583596,
+    "roc_auc": 0.9144484361592788,
+    "average_precision": 0.7408899170555666,
+    "top_20_capture_rate": 0.6792452830188679,
+    "top_20_lift": 3.379859058877017
   }
 }
